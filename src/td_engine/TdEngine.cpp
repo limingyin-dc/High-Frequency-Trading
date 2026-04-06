@@ -129,15 +129,23 @@ void TdEngine::OnRspQryInvestorPosition(CThostFtdcInvestorPositionField* p, CTho
         if (p->PosiDirection == THOST_FTDC_PD_Long) {
             ip.pos.long_yd.store(p->YdPosition);
             ip.pos.long_td.store(p->TodayPosition);
-            ip.pos.long_avg_price.store(p->OpenCost / std::max(p->Position, 1));
+            // OpenCost = 均价 × 手数 × 合约乘数，还原均价需除以乘数
+            // 用 PositionCost 而非 OpenCost：PositionCost 含当日浮动盈亏调整，
+            // 更接近当前持仓的真实成本，隔夜持仓精度更高
+            int total = p->Position;
+            if (total > 0)
+                ip.pos.long_avg_price.store(
+                    p->PositionCost / (total * m_account.multiplier));
         } else {
             ip.pos.short_yd.store(p->YdPosition);
             ip.pos.short_td.store(p->TodayPosition);
         }
-        LOG_INFO("[Td] 持仓: %s %s 昨=%d 今=%d",
+        LOG_INFO("[Td] 持仓: %s %s 昨=%d 今=%d 均价=%.4f",
             p->InstrumentID,
             p->PosiDirection == THOST_FTDC_PD_Long ? "多" : "空",
-            p->YdPosition, p->TodayPosition);
+            p->YdPosition, p->TodayPosition,
+            p->PosiDirection == THOST_FTDC_PD_Long && p->Position > 0
+                ? p->PositionCost / (p->Position * m_account.multiplier) : 0.0);
     }
     if (bIsLast) { LOG_INFO("[Td] 持仓查询完毕"); UpdateShm(); }
 }
@@ -208,36 +216,45 @@ void TdEngine::OnRtnOrder(CThostFtdcOrderField* p) {
 // 成交回报：更新持仓均价，计算 PnL，触发资金刷新
 void TdEngine::OnRtnTrade(CThostFtdcTradeField* p) {
     if (!p) return;
-    LOG_INFO("[Td] 成交: %s 价=%.2f 量=%d 方向=%c",
-        p->InstrumentID, p->Price, p->Volume, p->Direction);
+    LOG_INFO("[Td] 成交: %s 价=%.2f 量=%d 方向=%c 开平=%c",
+        p->InstrumentID, p->Price, p->Volume, p->Direction, p->OffsetFlag);
 
     auto& ip = GetOrCreateInstPos(p->InstrumentID);
     auto& pos = ip.pos;
+
     if (p->Direction == THOST_FTDC_D_Buy) {
         if (p->OffsetFlag == THOST_FTDC_OF_Open) {
-            // 买开：更新多头今仓和加权均价
+            // 买开：增加多头今仓，更新加权均价
             int old_vol = pos.long_td.load();
             pos.long_td.fetch_add(p->Volume);
             int new_vol = pos.long_td.load();
             if (new_vol > 0)
                 pos.long_avg_price.store(
                     (pos.long_avg_price.load() * old_vol + p->Price * p->Volume) / new_vol);
-        } else {
-            // 买平：减少空头持仓，计算平仓盈亏
+        } else if (p->OffsetFlag == THOST_FTDC_OF_CloseToday) {
+            // 买平今：减少空头今仓，计算平仓盈亏
             double avg = pos.long_avg_price.load();
-            m_risk.UpdatePnl((p->Price - avg) * p->Volume * m_account.multiplier);
+            m_risk.UpdatePnl((avg - p->Price) * p->Volume * m_account.multiplier);
             pos.short_td.fetch_add(-p->Volume);
+        } else {
+            // 买平昨：减少空头昨仓，计算平仓盈亏
+            double avg = pos.long_avg_price.load();
+            m_risk.UpdatePnl((avg - p->Price) * p->Volume * m_account.multiplier);
             pos.short_yd.fetch_add(-p->Volume);
         }
     } else {
         if (p->OffsetFlag == THOST_FTDC_OF_Open) {
             // 卖开：增加空头今仓
             pos.short_td.fetch_add(p->Volume);
-        } else {
-            // 卖平：减少多头持仓，计算平仓盈亏
+        } else if (p->OffsetFlag == THOST_FTDC_OF_CloseToday) {
+            // 卖平今：减少多头今仓，计算平仓盈亏
             double avg = pos.long_avg_price.load();
             m_risk.UpdatePnl((p->Price - avg) * p->Volume * m_account.multiplier);
             pos.long_td.fetch_add(-p->Volume);
+        } else {
+            // 卖平昨：减少多头昨仓，计算平仓盈亏
+            double avg = pos.long_avg_price.load();
+            m_risk.UpdatePnl((p->Price - avg) * p->Volume * m_account.multiplier);
             pos.long_yd.fetch_add(-p->Volume);
         }
     }
