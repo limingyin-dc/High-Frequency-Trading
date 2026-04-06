@@ -38,8 +38,8 @@ void Strategy::Start(int cpu_core) {
 
 void Strategy::Run() {
     uint64_t last_seq = 0;
-    int64_t  lat_sum  = 0;
-    int      lat_count = 0;
+    // int64_t  lat_sum   = 0; // [已注释] T1→T2 统计用
+    // int      lat_count = 0;
 
     while (true) {
         uint64_t cur_seq = g_tick_pool.WriteSeq();
@@ -54,14 +54,14 @@ void Strategy::Run() {
         const uint64_t  t1_tsc = slot.recv_tsc;
         last_seq = cur_seq;
 
-        // 延迟统计
-        lat_sum += Tsc::ToNs(t2_tsc - t1_tsc);
-        if (++lat_count >= 100) {
-            LOG_INFO("[Latency] 行情接收延迟(T1→T2) 近100tick均值=%lldns  (CPU=%.3fGHz)",
-                     (long long)(lat_sum / lat_count), Tsc::g_hz / 1e9);
-            lat_sum   = 0;
-            lat_count = 0;
-        }
+        // // [已注释] md→策略延迟统计(T1→T2)
+        // lat_sum += Tsc::ToNs(t2_tsc - t1_tsc);
+        // if (++lat_count >= 100) {
+        //     LOG_INFO("[Latency] 行情接收延迟(T1→T2) 近100tick均值=%lldns  (CPU=%.3fGHz)",
+        //              (long long)(lat_sum / lat_count), Tsc::g_hz / 1e9);
+        //     lat_sum   = 0;
+        //     lat_count = 0;
+        // }
 
         if (UNLIKELY(!m_td.isReady)) continue;
 
@@ -91,7 +91,8 @@ void Strategy::Run() {
                 double order_price = PriceUtil::ToDouble(
                     PriceUtil::AddTick(price_int, 1, 2000));
                 std::string ref = m_td.SendOrder(
-                    tick.instrument, order_price, THOST_FTDC_D_Buy);
+                    tick.instrument, order_price, THOST_FTDC_D_Buy,
+                    THOST_FTDC_OF_Open, 1, t2_tsc);
                 if (LIKELY(!ref.empty()))
                     LOG_INFO("[Strategy] 开仓 ref=%s", ref.c_str());
             }
@@ -102,7 +103,7 @@ void Strategy::Run() {
             double close_price = PriceUtil::ToDouble(
                 PriceUtil::AddTick(price_int, -1, 2000));
             std::string ref = m_td.CloseOrder(
-                tick.instrument, close_price, net_long);
+                tick.instrument, close_price, net_long, t2_tsc);
             if (LIKELY(!ref.empty()))
                 LOG_INFO("[Strategy] 平仓 ref=%s 净多=%d", ref.c_str(), net_long);
         }

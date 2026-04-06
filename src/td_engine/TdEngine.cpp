@@ -1,5 +1,6 @@
 #include "TdEngine.h"
 #include "Logger.h"
+#include "Tsc.h"
 #include <cstring>
 #include <chrono>
 #include <algorithm>
@@ -235,7 +236,7 @@ void TdEngine::OnRspOrderAction(CThostFtdcInputOrderActionField*, CThostFtdcRspI
 // 风控前置报单：七道风控检查 → 分配 OMS 槽位 → 预冻结保证金 → 发送限价单
 // 返回 order_ref，风控拦截或槽位满时返回空字符串
 std::string TdEngine::SendOrder(const char* inst, double price, char dir,
-                                 char offset, int vol) {
+                                 char offset, int vol, uint64_t t2_tsc) {
     int net = GetNetLong(inst);
     if (!m_risk.CheckOrder(inst, price, vol, net, dir)) return "";
 
@@ -268,6 +269,12 @@ std::string TdEngine::SendOrder(const char* inst, double price, char dir,
     m_account.update_available(-est);
 
     m_api->ReqOrderInsert(&req, ++m_requestID);
+    // T3：ReqOrderInsert 调用完成，统计策略决策→下单耗时（T2→T3）
+    if (t2_tsc != 0) {
+        uint64_t t3_tsc = Tsc::Now();
+        LOG_INFO("[Latency] 策略决策→下单(T2→T3) %lldns",
+                 (long long)Tsc::ToNs(t3_tsc - t2_tsc));
+    }
 
     // 更新共享内存中的最近报单时间戳
     if (m_shm) {
@@ -297,7 +304,8 @@ bool TdEngine::CancelOrder(const OrderSlot& slot) {
 }
 
 // 平多仓：遵循上期所规则，优先平今仓（CloseToday），再平昨仓（Close）
-std::string TdEngine::CloseOrder(const char* inst, double price, int vol) {
+std::string TdEngine::CloseOrder(const char* inst, double price, int vol,
+                                  uint64_t t2_tsc) {
     auto* ip = FindInstPos(inst);
     if (!ip) return "";
 
@@ -311,7 +319,7 @@ std::string TdEngine::CloseOrder(const char* inst, double price, int vol) {
         LOG_WARN("[Td] %s 无可平多仓", inst);
         return "";
     }
-    return SendOrder(inst, price, THOST_FTDC_D_Sell, offset, close_vol);
+    return SendOrder(inst, price, THOST_FTDC_D_Sell, offset, close_vol, t2_tsc);
 }
 
 // 快照式读取净多头：四次 relaxed load，策略线程单线程调用无撕裂风险
