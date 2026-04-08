@@ -5,6 +5,10 @@
 #include <array>
 #include <cstring>
 
+#ifndef UNLIKELY
+  #define UNLIKELY(x) __builtin_expect(!!(x), 0)
+#endif
+
 // 最大订阅合约数，与 MdEngine::MAX_INST 保持一致
 constexpr int TICK_POOL_MAX_INST = 16;
 
