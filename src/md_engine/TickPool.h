@@ -5,38 +5,42 @@
 #include <array>
 #include <cstring>
 
-constexpr size_t TICK_POOL_SIZE = 1024; // 必须是 2 的幂
+// 最大订阅合约数，与 MdEngine::MAX_INST 保持一致
+constexpr int TICK_POOL_MAX_INST = 16;
 
+// 每个合约独占一个 TickSlot，固定位置存储
+// 行情线程按 inst_idx 直接覆盖写，策略线程按 inst_idx 直接读
+// 无环形索引，无队列，O(1) 定位
 struct alignas(64) TickSlot {
     SlimTick tick;
     uint64_t recv_tsc{0};
+    // 每个槽位独立的写入版本号，策略侧用于检测该合约是否有新 tick
+    alignas(64) std::atomic<uint64_t> seq{0};
 };
 
-// 无队列、无索引环形缓冲池
-// 行情线程写入槽位后递增 write_seq
-// 策略线程直接通过 Latest() 拿到最新 tick 的指针，无需任何索引计算
 class TickPool {
 public:
     TickPool() = default;
 
+    // 启动前预热，触发物理页分配，避免开盘 Page Fault
     void WarmUp();
 
-    // 行情线程：写入数据，递增 write_seq（release 保证数据可见）
+    // 行情线程：按合约下标写入固定槽位
+    // inst_idx 由 MdEngine::FindInstIdx() 提供，范围 [0, TICK_POOL_MAX_INST)
     void Write(const CThostFtdcDepthMarketDataField& p, uint64_t recv_tsc, int8_t inst_idx);
 
-    // 策略线程：返回当前写入序号，用于检测是否有新 tick
-    uint64_t WriteSeq() const {
-        return m_write_seq.load(std::memory_order_acquire);
+    // 策略线程：按合约下标读取最新 tick 槽位
+    const TickSlot& SlotByInst(int8_t inst_idx) const {
+        return m_slots[inst_idx];
     }
 
-    // 策略线程：用已知的 seq 直接定位槽位，避免重复 load write_seq
-    const TickSlot& SlotBySeq(uint64_t seq) const {
-        return m_slots[(seq - 1) & (TICK_POOL_SIZE - 1)];
+    // 策略线程：读取某合约当前写入序号，用于检测是否有新 tick
+    uint64_t SeqByInst(int8_t inst_idx) const {
+        return m_slots[inst_idx].seq.load(std::memory_order_acquire);
     }
 
 private:
-    std::array<TickSlot, TICK_POOL_SIZE> m_slots{};
-    alignas(64) std::atomic<uint64_t> m_write_seq{0};
+    std::array<TickSlot, TICK_POOL_MAX_INST> m_slots{};
 };
 
 inline TickPool g_tick_pool;

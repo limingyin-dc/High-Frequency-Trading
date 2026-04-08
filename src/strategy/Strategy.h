@@ -94,6 +94,8 @@ private:
         int64_t last_mid = 0;
     };
     std::array<MmState, MAX_INST> m_state{};
+    // 每个合约上次处理的 seq，用于检测新 tick
+    std::array<uint64_t, MAX_INST> m_last_seq{};
 
     // 撤掉某合约的 bid 或 ask 挂单（通过槽位下标，O(1)）
     void CancelIfActive(int slot_idx);

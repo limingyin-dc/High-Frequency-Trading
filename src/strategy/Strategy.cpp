@@ -91,28 +91,28 @@ void Strategy::Start(int cpu_core) {
 }
 
 void Strategy::Run() {
-    uint64_t last_seq = 0;
-
     while (true) {
-        uint64_t cur_seq = g_tick_pool.WriteSeq();
-        if (UNLIKELY(cur_seq == last_seq)) {
-            __asm__ __volatile__("pause");
-            continue;
+        bool any_new = false;
+
+        for (int idx = 0; idx < m_inst_count; ++idx) {
+            uint64_t cur_seq = g_tick_pool.SeqByInst((int8_t)idx);
+            if (LIKELY(cur_seq == m_last_seq[idx])) continue;
+
+            m_last_seq[idx] = cur_seq;
+            any_new = true;
+
+            if (UNLIKELY(!m_td.isReady)) continue;
+
+            const TickSlot& slot   = g_tick_pool.SlotByInst((int8_t)idx);
+            const SlimTick& tick   = slot.tick;
+            const uint64_t  t1_tsc = slot.recv_tsc;
+
+            if (UNLIKELY(tick.bid[0] <= 0.0 || tick.ask[0] <= 0.0)) continue;
+
+            OnTick(idx, tick, t1_tsc);
         }
 
-        const TickSlot& slot   = g_tick_pool.SlotBySeq(cur_seq);
-        const SlimTick& tick   = slot.tick;
-        const uint64_t  t1_tsc = slot.recv_tsc;
-        last_seq = cur_seq;
-
-        if (UNLIKELY(!m_td.isReady)) continue;
-
-        // inst_idx 由 MdEngine 写入时填好，O(1) 定位，无字符串比较
-        int idx = tick.inst_idx;
-        if (UNLIKELY(idx < 0 || idx >= m_inst_count)) continue;
-
-        if (UNLIKELY(tick.bid[0] <= 0.0 || tick.ask[0] <= 0.0)) continue;
-
-        OnTick(idx, tick, t1_tsc);
+        if (UNLIKELY(!any_new))
+            __asm__ __volatile__("pause");
     }
 }

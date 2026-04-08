@@ -1,17 +1,18 @@
 #include "TickPool.h"
 
 void TickPool::WarmUp() {
-    for (size_t i = 0; i < TICK_POOL_SIZE; ++i) {
+    for (int i = 0; i < TICK_POOL_MAX_INST; ++i) {
         volatile uint64_t t = m_slots[i].recv_tsc;
         (void)t;
     }
 }
 
-void TickPool::Write(const CThostFtdcDepthMarketDataField& p, uint64_t recv_tsc) {
-    uint64_t seq = m_write_seq.load(std::memory_order_relaxed);
-    int idx = seq & (TICK_POOL_SIZE - 1);
+void TickPool::Write(const CThostFtdcDepthMarketDataField& p, uint64_t recv_tsc, int8_t inst_idx) {
+    if (UNLIKELY(inst_idx < 0 || inst_idx >= TICK_POOL_MAX_INST)) return;
 
-    SlimTick& s = m_slots[idx].tick;
+    TickSlot& slot = m_slots[inst_idx];
+    SlimTick& s    = slot.tick;
+
     memcpy(s.instrument, p.InstrumentID, 31);
     s.instrument[31] = '\0';
     s.last_price  = p.LastPrice;
@@ -33,7 +34,9 @@ void TickPool::Write(const CThostFtdcDepthMarketDataField& p, uint64_t recv_tsc)
     s.update_ms = p.UpdateMillisec;
     memcpy(s.update_time, p.UpdateTime, 8);
     s.update_time[8] = '\0';
+    s.inst_idx = inst_idx;
 
-    m_slots[idx].recv_tsc = recv_tsc;
-    m_write_seq.store(seq + 1, std::memory_order_release);
+    slot.recv_tsc = recv_tsc;
+    // release 保证上面所有写对策略线程可见
+    slot.seq.fetch_add(1, std::memory_order_release);
 }
