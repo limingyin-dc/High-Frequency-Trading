@@ -4,6 +4,7 @@
 #include <atomic>
 #include <array>
 #include <cstring>
+#include "Logger.h"
 
 #ifndef UNLIKELY
   #define UNLIKELY(x) __builtin_expect(!!(x), 0)

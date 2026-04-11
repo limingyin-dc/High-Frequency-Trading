@@ -7,11 +7,11 @@
 
 // 风控参数配置
 struct RiskConfig {
-    double max_order_value     = 500000.0; // 单笔报单名义价值上限（元）
-    int    max_active_orders   = 10;       // 全局最大活跃挂单数
-    int    max_active_per_inst = 3;        // 单合约最大活跃挂单数
-    double max_daily_loss      = 50000.0;  // 日内最大亏损熔断线（元）
-    int    max_cancel_per_min  = 20;       // 每分钟最大撤单次数
+    double max_order_value     = 5000000.0; // 单笔报单名义价值上限（元）
+    int    max_active_orders   = 100;       // 全局最大活跃挂单数
+    int    max_active_per_inst = 20;        // 单合约最大活跃挂单数
+    double max_daily_loss      = 500000.0;  // 日内最大亏损熔断线（元）
+    int    max_cancel_per_min  = 500;       // 每分钟最大撤单次数
     int    max_pos_net         = 10;       // 单合约最大净持仓手数
 };
 
@@ -28,7 +28,7 @@ public:
     //           单合约挂单数 / 净持仓上限 / 自成交保护
     // 全部通过返回 true，任一失败返回 false 并记录日志
     bool CheckOrder(const char* inst, double price, int vol,
-                    int current_net_pos, char direction = '0');
+                              int current_net_pos, char direction, bool is_maker);
 
     // 撤单频率检查：基于 60 桶时间轮统计每分钟撤单次数
     // 超过 max_cancel_per_min 时返回 false

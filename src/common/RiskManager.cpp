@@ -1,6 +1,7 @@
 #include "RiskManager.h"
 #include "Logger.h"
 
+
 RiskManager::RiskManager(const AccountMetrics& account,
                          OrderManager& oms,
                          const RiskConfig& cfg)

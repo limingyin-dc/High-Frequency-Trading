@@ -120,7 +120,7 @@ void TdEngine::OnRspQryTradingAccount(CThostFtdcTradingAccountField* p, CThostFt
     m_account.available.store(p->Available);
     m_account.curr_margin.store(p->CurrMargin);
     m_account.frozen_margin.store(p->FrozenMargin);
-    LOG_INFO("[Td] 资金: 可用=%.2f 占用保证金=%.2f", p->Available, p->CurrMargin);
+    //LOG_INFO("[Td] 资金: 可用=%.2f 占用保证金=%.2f", p->Available, p->CurrMargin);
     UpdateShm();
 }
 
@@ -151,11 +151,11 @@ void TdEngine::OnRspQryInvestorPosition(CThostFtdcInvestorPositionField* p, CTho
                 ip.pos.short_avg_price.store(
                     p->PositionCost / (total * m_account.multiplier));
         }
-        LOG_INFO("[Td] 持仓: %s %s 昨=%d 今=%d 均价=%.4f",
-            p->InstrumentID,
-            p->PosiDirection == THOST_FTDC_PD_Long ? "多" : "空",
-            p->YdPosition, p->TodayPosition,
-            p->Position > 0 ? p->PositionCost / (p->Position * m_account.multiplier) : 0.0);
+        // LOG_INFO("[Td] 持仓: %s %s 昨=%d 今=%d 均价=%.4f",
+        //     p->InstrumentID,
+        //     p->PosiDirection == THOST_FTDC_PD_Long ? "多" : "空",
+        //     p->YdPosition, p->TodayPosition,
+        //     p->Position > 0 ? p->PositionCost / (p->Position * m_account.multiplier) : 0.0);
     }
     if (bIsLast) { LOG_INFO("[Td] 持仓查询完毕"); UpdateShm(); }
 }
@@ -214,8 +214,8 @@ void TdEngine::OnRtnOrder(CThostFtdcOrderField* p) {
             m_account.frozen_margin.store(
                 std::max(0.0, m_account.frozen_margin.load() - est));
             m_account.update_available(est);
-            LOG_INFO("[Td] 撤单解冻保证金: ref=%s 未成=%d 解冻=%.2f",
-                     p->OrderRef, unfilled, est);
+            // LOG_INFO("[Td] 撤单解冻保证金: ref=%s 未成=%d 解冻=%.2f",
+                    //  p->OrderRef, unfilled, est);
         }
     }
 
@@ -226,8 +226,8 @@ void TdEngine::OnRtnOrder(CThostFtdcOrderField* p) {
 // 成交回报：更新持仓均价，计算 PnL，触发资金刷新
 void TdEngine::OnRtnTrade(CThostFtdcTradeField* p) {
     if (!p) return;
-    LOG_INFO("[Td] 成交: %s 价=%.2f 量=%d 方向=%c 开平=%c",
-        p->InstrumentID, p->Price, p->Volume, p->Direction, p->OffsetFlag);
+    // LOG_INFO("[Td] 成交: %s 价=%.2f 量=%d 方向=%c 开平=%c",
+    //     p->InstrumentID, p->Price, p->Volume, p->Direction, p->OffsetFlag);
 
     auto& ip = GetOrCreateInstPos(p->InstrumentID);
     auto& pos = ip.pos;
@@ -282,7 +282,7 @@ void TdEngine::OnRtnTrade(CThostFtdcTradeField* p) {
 void TdEngine::OnRspOrderAction(CThostFtdcInputOrderActionField* p, CThostFtdcRspInfoField* r, int, bool) {
     if (!r || r->ErrorID == 0) return;
 
-    LOG_ERROR("[Td] 撤单失败: ErrID=%d Msg=%s", r->ErrorID, r->ErrorMsg);
+    //LOG_ERROR("[Td] 撤单失败: ErrID=%d Msg=%s", r->ErrorID, r->ErrorMsg);
     if (!p) return;
 
     int idx = m_oms.DecodeIndexPublic(p->OrderRef);
@@ -295,8 +295,8 @@ void TdEngine::OnRspOrderAction(CThostFtdcInputOrderActionField* p, CThostFtdcRs
     // ErrorID 30: 报单已撤销
     // 这三种情况订单已终结，不会再收到 OnRtnOrder，必须主动释放槽位
     if (r->ErrorID == 25 || r->ErrorID == 26 || r->ErrorID == 30) {
-        LOG_WARN("[Td] 撤单时订单已终结(ErrID=%d)，主动释放槽位 ref=%s",
-                 r->ErrorID, p->OrderRef);
+        //LOG_WARN("[Td] 撤单时订单已终结(ErrID=%d)，主动释放槽位 ref=%s",
+        //         r->ErrorID, p->OrderRef);
         slot.state.store(OrderState::Empty, std::memory_order_release);
     } else {
         // 其他错误：标记 Cancelled，阻止守护线程下次扫描再次撤单
@@ -365,7 +365,7 @@ bool TdEngine::CancelOrder(const OrderSlot& slot) {
     req.SessionID  = m_session_id;
     req.ActionFlag = THOST_FTDC_AF_Delete;
 
-    LOG_INFO("[Td] 发起撤单: ref=%s %s", slot.order_ref, slot.instrument);
+    //LOG_INFO("[Td] 发起撤单: ref=%s %s", slot.order_ref, slot.instrument);
     m_api->ReqOrderAction(&req, ++m_requestID);
     return true;
 }
@@ -382,7 +382,7 @@ std::string TdEngine::CloseOrder(const char* inst, double price, int vol) {
     char offset   = (td > 0) ? THOST_FTDC_OF_CloseToday : THOST_FTDC_OF_Close;
     int close_vol = std::min(vol, td > 0 ? td : yd);
     if (close_vol <= 0) {
-        LOG_WARN("[Td] %s 无可平多仓", inst);
+        //LOG_WARN("[Td] %s 无可平多仓", inst);
         return "";
     }
     return SendOrder(inst, price, THOST_FTDC_D_Sell, offset, close_vol);
@@ -447,12 +447,12 @@ TdEngine::InstPos& TdEngine::GetOrCreateInstPos(const char* name) {
     int idx = m_inst_count.fetch_add(1, std::memory_order_relaxed);
     if (idx < MAX_INST) {
         snprintf(m_positions[idx].name, sizeof(m_positions[idx].name), "%.31s", name);
-        LOG_WARN("[Td] 未预填合约 %s，动态追加 slot=%d", name, idx);
+        //LOG_WARN("[Td] 未预填合约 %s，动态追加 slot=%d", name, idx);
         return m_positions[idx];
     }
     // 超出上限，回退并返回最后一个槽（防止越界，实际不应发生）
     m_inst_count.fetch_add(-1, std::memory_order_relaxed);
-    LOG_ERROR("[Td] 持仓槽位已满，无法追加合约 %s", name);
+    //LOG_ERROR("[Td] 持仓槽位已满，无法追加合约 %s", name);
     return m_positions[MAX_INST - 1];
 }
 
@@ -470,7 +470,7 @@ void TdEngine::CancelGuardLoop() {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if (!isReady) continue;
         m_oms.ForEachTimeout(3000, [this](OrderSlot& slot) {
-            LOG_WARN("[OMS] 超时挂单撤销: ref=%s %s", slot.order_ref, slot.instrument);
+            //LOG_WARN("[OMS] 超时挂单撤销: ref=%s %s", slot.order_ref, slot.instrument);
             CancelOrder(slot);
         });
     }

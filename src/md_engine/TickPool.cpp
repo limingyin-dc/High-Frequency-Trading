@@ -19,18 +19,12 @@ void TickPool::Write(const CThostFtdcDepthMarketDataField& p, uint64_t recv_tsc,
     s.upper_limit = p.UpperLimitPrice;
     s.lower_limit = p.LowerLimitPrice;
 
-    s.bid[0] = p.BidPrice1; s.bid_vol[0] = p.BidVolume1;
-    s.bid[1] = p.BidPrice2; s.bid_vol[1] = p.BidVolume2;
-    s.bid[2] = p.BidPrice3; s.bid_vol[2] = p.BidVolume3;
-    s.bid[3] = p.BidPrice4; s.bid_vol[3] = p.BidVolume4;
-    s.bid[4] = p.BidPrice5; s.bid_vol[4] = p.BidVolume5;
+    s.bid = p.BidPrice1; 
+    s.bid_vol = p.BidVolume1;
 
-    s.ask[0] = p.AskPrice1; s.ask_vol[0] = p.AskVolume1;
-    s.ask[1] = p.AskPrice2; s.ask_vol[1] = p.AskVolume2;
-    s.ask[2] = p.AskPrice3; s.ask_vol[2] = p.AskVolume3;
-    s.ask[3] = p.AskPrice4; s.ask_vol[3] = p.AskVolume4;
-    s.ask[4] = p.AskPrice5; s.ask_vol[4] = p.AskVolume5;
-
+    s.ask = p.AskPrice1;
+    s.ask_vol = p.AskVolume1;
+   
     s.update_ms = p.UpdateMillisec;
     memcpy(s.update_time, p.UpdateTime, 8);
     s.update_time[8] = '\0';

@@ -14,10 +14,10 @@ struct alignas(64) SlimTick {
     double last_price;
     double upper_limit;
     double lower_limit;
-    double bid[5];
-    int    bid_vol[5];
-    double ask[5];
-    int    ask_vol[5];
+    double bid;
+    int    bid_vol;
+    double ask;
+    int    ask_vol;
     int    update_ms;
     char   update_time[9];
     int8_t inst_idx;   // 合约在订阅列表中的下标，-1 表示未知

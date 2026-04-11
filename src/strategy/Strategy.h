@@ -15,17 +15,25 @@
   #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #endif
 
+
 namespace PriceUtil {
-    constexpr int64_t SCALE = 10000;
+    // 放大倍数，假设我们把价格放大 10000 倍处理（精度到 0.0001）
+    constexpr double SCALE = 10000.0;
+
+    // double 转 整数（带四舍五入，防止精度丢失）
     inline int64_t ToInt(double price) {
-        return static_cast<int64_t>(price * SCALE + 0.5);
+        return static_cast<int64_t>(std::round(price * SCALE));
     }
+
+    // 整数转 double
     inline double ToDouble(int64_t price_int) {
         return static_cast<double>(price_int) / SCALE;
     }
-    // tick_size 单位与 SCALE 一致（整数价格单位）
-    inline int64_t AddTick(int64_t price_int, int ticks, int64_t tick_size = 2) {
-        return price_int + ticks * tick_size;
+
+    // 增加 Tick 的逻辑
+    // mid_int: 当前价格整数, num_ticks: 偏移跳数, tick_size_int: 0.2 对应的整数值
+    inline int64_t AddTick(int64_t mid_int, int num_ticks, int64_t tick_size_int) {
+        return mid_int + (static_cast<int64_t>(num_ticks) * tick_size_int);
     }
 }
 
